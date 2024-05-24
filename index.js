@@ -3,15 +3,11 @@ const app = express();
 const cors = require("cors");
 var jwt = require("jsonwebtoken");
 require("dotenv").config();
-// const stripe = require("stripe")(
-//   "sk_test_51OUVCCDVjBwRrxfoW7CNyk1K8vvgp0hFyk0AZT8Yk3udbFHlNs3IvDg97OvANHMTTrlTmlI1FxDUPPOXOQziWvoa00khEwwxjd"
-// );
+const stripe = require("stripe")(process.env.STRIP_ACCOUNT);
 const port = process.env.POST || 4321;
 
 // middle wear
-app.use(
-  cors()
-);
+app.use(cors());
 app.use(express.json());
 
 const verifyToken = (req, res, next) => {
@@ -47,10 +43,12 @@ async function run() {
     // await client.connect();
 
     const productCollection = client.db("purchasePal").collection("product");
-    const categoryCollection = client.db("purchasePal").collection("categories");
+    const categoryCollection = client
+      .db("purchasePal")
+      .collection("categories");
     const userCollection = client.db("purchasePal").collection("user");
     const cartCollection = client.db("purchasePal").collection("cart");
-    const likesCollection = client.db("purchasePal").collection("likes");
+    const orderCollection = client.db("purchasePal").collection("order");
     const reviewCollection = client.db("purchasePal").collection("review");
 
     // middleware again
@@ -151,6 +149,31 @@ async function run() {
     });
 
     // review api
+    app.patch("/:id", async (req, res) => {
+      const item = req.body;
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const options = { upsert: true };
+      const updatedDoc = {
+        $set: {
+          review: [
+            {
+              name: item.review.name,
+              rating: item.review.rating,
+              reviewText: item.review.reviewText,
+            },
+          ],
+        },
+      };
+
+      const result = await productCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      res.send(result);
+    });
+
     app.post("/review", async (req, res) => {
       const reviewItem = req.body;
       const result = await reviewCollection.insertOne(reviewItem);
@@ -205,6 +228,31 @@ async function run() {
       res.send(result);
     });
 
+    //   order api
+    app.post("/order", async (req, res) => {
+      const orderedItem = req.body;
+      const result = await orderCollection.insertOne(orderedItem);
+      res.send(result);
+    });
+
+    app.get("/order", async (req, res) => {
+      const result = await orderCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.delete("/order/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await orderCollection.deleteOne(query);
+      res.send(result);
+    });
+    app.delete("/order/admin/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { eventId: new ObjectId(id) };
+      const result = await orderCollection.deleteOne(query);
+      res.send(result);
+    });
+
     //   cart api
     app.post("/cart", async (req, res) => {
       const bookingItem = req.body;
@@ -244,29 +292,29 @@ async function run() {
     });
 
     // stripe payment api
-    // app.post("/checkout-session", async (req, res) => {
-    //   const product = req.body;
-    //   console.log(product);
-    //   const lineItems = product.products.map((prod) => ({
-    //     price_data: {
-    //       currency: "USD",
-    //       product_data: {
-    //         name: prod.name,
-    //       },
-    //       unit_amount: prod.price * 100, // Convert price to cents
-    //     },
-    //     quantity: 1
-    //   }));
+    app.post("/checkout-session", async (req, res) => {
+      const product = req.body;
+      console.log(product);
+      const lineItems = product.products.map((prod) => ({
+        price_data: {
+          currency: "USD",
+          product_data: {
+            name: prod.name,
+          },
+          unit_amount: prod.price * 100, // Convert price to cents
+        },
+        quantity: 1
+      }));
 
-    //   const session = await stripe.checkout.sessions.create({
-    //     payment_method_types: ["card"], // Corrected parameter name
-    //     line_items: lineItems, // Corrected parameter name
-    //     mode: "payment",
-    //     success_url: "https://taste-trail-web.web.app/success",
-    //     cancel_url: "https://taste-trail-web.web.app/cancel",
-    //   });
-    //   res.json({ id: session.id });
-    // });
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"], // Corrected parameter name
+        line_items: lineItems, // Corrected parameter name
+        mode: "payment",
+        success_url: "http://localhost:5173/success",
+        cancel_url: "http://localhost:5173/cancel",
+      });
+      res.json({ id: session.id });
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
